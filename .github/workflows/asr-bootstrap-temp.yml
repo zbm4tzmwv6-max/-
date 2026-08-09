@@ -18,8 +18,8 @@ jobs:
           mkdir -p asr-bundle/bin
           curl -L --fail --retry 3 -o whisper-bin.tar.gz https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-ubuntu-x64.tar.gz
           tar -xzf whisper-bin.tar.gz -C asr-bundle/bin
-          curl -L --fail --retry 3 -o asr-bundle/ggml-base-q5_1.bin https://raw.githubusercontent.com/bnosac/audio.whisper/master/inst/repo/ggml-base-q5_1.bin
-          curl -L --fail --retry 3 -o asr-bundle/ggml-small-q5_1.bin https://raw.githubusercontent.com/bnosac/audio.whisper/master/inst/repo/ggml-small-q5_1.bin
+          curl -L --fail --retry 3 -o asr-bundle/ggml-base-q5_1.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin
+          curl -L --fail --retry 3 -o asr-bundle/ggml-small-q5_1.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin
           find asr-bundle -maxdepth 3 -type f -printf '%p %s bytes\n'
       - name: Upload ASR bundle
         uses: actions/upload-artifact@v4
