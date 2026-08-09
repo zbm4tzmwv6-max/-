@@ -1,0 +1,16 @@
+{
+  "tested_runtime": {
+    "whisper_cpp": "1.9.2",
+    "platform": "linux-x64",
+    "full_call_model": "ggml-base-q5_1.bin",
+    "key_segment_model": "ggml-small-q5_1.bin",
+    "language_default": "zh"
+  },
+  "model_sources": {
+    "base_q5_1": "https://raw.githubusercontent.com/bnosac/audio.whisper/master/inst/repo/ggml-base-q5_1.bin",
+    "small_q5_1": "https://raw.githubusercontent.com/bnosac/audio.whisper/master/inst/repo/ggml-small-q5_1.bin",
+    "tiny_q5_1": "https://raw.githubusercontent.com/bnosac/audio.whisper/master/inst/repo/ggml-tiny-q5_1.bin"
+  },
+  "policy": "Any FFmpeg-decodable audio/video is valid input. Raw media is sufficient; do not ask the user to create a transcript.",
+  "supported_input_policy": "any FFmpeg-decodable audio/video format"
+}
