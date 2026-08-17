@@ -1,0 +1,46 @@
+name: temp-asr-bootstrap
+
+on:
+  push:
+    paths:
+      - '.github/workflows/_temp_asr_bootstrap.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build whisper-cli
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone --depth 1 --branch v1.9.1 https://github.com/ggml-org/whisper.cpp.git /tmp/whisper.cpp
+          cmake -S /tmp/whisper.cpp -B /tmp/whisper.cpp/build \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DGGML_NATIVE=OFF \
+            -DWHISPER_SDL2=OFF \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/whisper.cpp/build --config Release -j2 --target whisper-cli
+          mkdir -p asr-assets/bin asr-assets/models
+          cp /tmp/whisper.cpp/build/bin/whisper-cli asr-assets/bin/whisper-cli
+          chmod +x asr-assets/bin/whisper-cli
+
+      - name: Download multilingual models
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -L --fail --retry 3 \
+            https://raw.githubusercontent.com/bnosac/audio.whisper/master/inst/repo/ggml-base-q5_1.bin \
+            -o asr-assets/models/ggml-base-q5_1.bin
+          curl -L --fail --retry 3 \
+            https://raw.githubusercontent.com/bnosac/audio.whisper/master/inst/repo/ggml-small-q5_1.bin \
+            -o asr-assets/models/ggml-small-q5_1.bin
+          ls -lh asr-assets/bin asr-assets/models
+
+      - name: Upload runtime bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: asr-assets
+          path: asr-assets
+          retention-days: 1
+          compression-level: 0
