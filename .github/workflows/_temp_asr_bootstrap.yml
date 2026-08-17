@@ -30,10 +30,10 @@ jobs:
         run: |
           set -euxo pipefail
           curl -L --fail --retry 3 \
-            https://raw.githubusercontent.com/bnosac/audio.whisper/master/inst/repo/ggml-base-q5_1.bin \
+            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin?download=true \
             -o asr-assets/models/ggml-base-q5_1.bin
           curl -L --fail --retry 3 \
-            https://raw.githubusercontent.com/bnosac/audio.whisper/master/inst/repo/ggml-small-q5_1.bin \
+            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin?download=true \
             -o asr-assets/models/ggml-small-q5_1.bin
           ls -lh asr-assets/bin asr-assets/models
 
