@@ -15,8 +15,9 @@ jobs:
       - name: Download real-source images
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
           mkdir -p saison_images
+          missing=()
 
           fetch() {
             local out="$1"; shift
@@ -42,67 +43,80 @@ jobs:
             return 1
           }
 
-          fetch '01_Yvan_De_Baets.jpg' \
+          need() {
+            local out="$1"; shift
+            if ! fetch "$out" "$@"; then
+              missing+=("$out")
+            fi
+          }
+
+          need '01_Yvan_De_Baets.jpg' \
             'https://www.brusseleir.eu/wp-content/uploads/2025/03/Yvan-De-Baets-HR-cropped-768x648.jpg' \
             'https://img.jakpost.net/c/2016/12/01/2016_12_01_16953_1480568574._large.jpg'
 
-          fetch '02_19世纪列日工业景观.jpg' \
+          need '02_19世纪列日工业景观.jpg' \
             'https://liegecitations.wordpress.com/files/2008/09/houillere_la_haye_1840.jpg?w=640'
 
-          fetch '03_20世纪初比利时商业酒厂.jpg' \
+          need '03_20世纪初比利时商业酒厂.jpg' \
             'https://bocq.be/wp-content/uploads/2016/02/brasserie-1910.jpg'
 
-          fetch '04_Brasserie_Dupont历史酒厂.jpg' \
+          need '04_Brasserie_Dupont历史酒厂.jpg' \
             'https://s3.eu-west-2.amazonaws.com/media.jamesclay.co.uk/transforms/brandimages/2372/brasserie-dupont-main_a597d54d4deb01e7c2593730c48e4ff3.jpg'
 
-          fetch '05_Farmhouse_Ales书封.jpg' \
-            'https://www.mr-malt.it/media/catalog/product/cache/d8599a445213e686025b83b9053c9044/f/a/farmhouse_ale.jpg'
+          need '05_Farmhouse_Ales书封.jpg' \
+            'https://www.brewerspublications.com/cdn/shop/products/Farmhouse-Ales-_overhead_1800x.jpg?v=1505859275' \
+            'https://www.brewerspublications.com/cdn/shop/products/Farmhouse_Ales_1800x.jpg?v=1505859275'
 
           if ! fetch '06_BJCP_2021_25B_Saison.jpg' \
             'https://fastly.mwm-storage.mwmcdn.com/raw_files/002c5147-e419-4c73-92da-7196f76f755d'; then
             echo 'Direct BJCP image unavailable; capturing the official BJCP 25B Saison page.'
-            google-chrome --headless --no-sandbox --disable-gpu --hide-scrollbars \
+            CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+            if [ -n "$CHROME" ] && "$CHROME" --headless --no-sandbox --disable-gpu --hide-scrollbars \
               --window-size=1280,1800 \
               --screenshot="saison_images/06_BJCP_2021_25B_Saison.png" \
-              'https://www.bjcp.org/style/2021/25/25B/saison/'
+              'https://www.bjcp.org/style/2021/25/25B/saison/'; then
+              echo 'OK 06_BJCP_2021_25B_Saison.png (official-page screenshot)'
+            else
+              missing+=("06_BJCP_2021_25B_Saison")
+            fi
           fi
 
-          fetch '07_Saison_du_Meyboom.png' \
+          need '07_Saison_du_Meyboom.png' \
             'https://www.belgianbeerheaven.com/bg/en/thumbnail/detail/LxOyd/La-Senne-Saison-Du-Meyboom-33Cl---21005-1728659242.png' \
             'https://belgianstyleales.com/cdn/shop/files/item7224_860x860_a7b73b64-9dd9-41d5-ad0d-cfd224ead43f.jpg?v=1734625566&width=860'
 
-          fetch '08_Wyeast_3711_French_Saison.png' \
+          need '08_Wyeast_3711_French_Saison.png' \
             'https://www.graintoglass.ca/cdn/shop/files/wyeast-3711-french-saison-liquid-yeast-8249229.png?v=1754931606'
 
-          fetch '09_Wyeast_3724_Belgian_Saison.png' \
+          need '09_Wyeast_3724_Belgian_Saison.png' \
             'https://www.graintoglass.ca/cdn/shop/files/wyeast-3724-belgian-saison-liquid-yeast-4856261.png?v=1754931606'
 
-          fetch '10_Saccharomyces_diastaticus.jpg' \
+          need '10_Saccharomyces_diastaticus.jpg' \
             'https://brauwelt.com/images/BWI_Artikelbilder/BWI_2020/BWI_05_2020/brauwelt-fig1-s-diastaticus-2020.jpg'
 
-          fetch '11_Brettanomyces_bruxellensis.jpg' \
+          need '11_Brettanomyces_bruxellensis.jpg' \
             'https://eurekabrewing.wordpress.com/wp-content/uploads/2012/03/5112bbrux-9.jpg'
 
-          fetch '12_Saison_Dupont.jpg' \
+          need '12_Saison_Dupont.jpg' \
             'https://collectivecraftbeer.com/cdn/shop/files/brasserie-dupont-saison-dupont_1000x.jpg?v=1723501549' \
             'https://cdn.webshopapp.com/shops/334150/files/394652358/650x650x2/dupont-saison-dupont-75cl.jpg'
 
-          fetch '13_Boulevard_Tank_7.jpg' \
+          need '13_Boulevard_Tank_7.jpg' \
             'https://www.brejas.com.br/media/reviews/photos/original/7a/0a/4d/7615-boulevard-tank-7-farmhouse-ale-98-1642591031.jpg'
 
-          fetch '14_Saison_du_Fermier.png' \
+          need '14_Saison_du_Fermier.png' \
             'https://s3-ap-northeast-1.amazonaws.com/public-my-beer-2/uploads/beer/image/17718/8d2b9d0d-99fe-40d1-9900-dbad8991520e.png'
 
           cat > saison_images/README_图片来源.txt <<'EOF'
-          01 Yvan De Baets — Brusseleir / alternative The Jakarta Post
+          01 Yvan De Baets — Brusseleir / The Jakarta Post（备用）
           02 19世纪列日工业景观 — Liege Citations archive
           03 20世纪初比利时商业酒厂 — Brasserie du Bocq
           04 Brasserie Dupont历史酒厂 — James Clay / Brasserie Dupont brand image
-          05 Farmhouse Ales书封 — Mr Malt product image
-          06 BJCP 2021 25B Saison — BJCP official style page (or archived style-page image)
+          05 Farmhouse Ales书封 — Brewers Publications
+          06 BJCP 2021 25B Saison — BJCP official style page / archived style image
           07 Saison du Meyboom — Belgian Beer Heaven / Belgian Style Ales
-          08 Wyeast 3711 French Saison — Grain to Glass product image
-          09 Wyeast 3724 Belgian Saison — Grain to Glass product image
+          08 Wyeast 3711 French Saison — Grain to Glass
+          09 Wyeast 3724 Belgian Saison — Grain to Glass
           10 Saccharomyces cerevisiae var. diastaticus — Brauwelt microscopy figure
           11 Brettanomyces bruxellensis — Eureka Brewing microscopy image
           12 Saison Dupont — Collective Craft Beer / Speciaalbierpakket
@@ -111,10 +125,16 @@ jobs:
           EOF
 
           echo '--- downloaded files ---'
-          file saison_images/*
+          file saison_images/* || true
           find saison_images -maxdepth 1 -type f -printf '%f\t%s bytes\n' | sort
 
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf 'MISSING: %s\n' "${missing[@]}" >&2
+            exit 1
+          fi
+
       - name: Upload ZIP artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: saison-article-images
