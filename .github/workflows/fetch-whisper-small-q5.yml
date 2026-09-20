@@ -1,0 +1,29 @@
+name: Temporary Whisper Small Q5 Model Fetch
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fetch-whisper-small-q5.yml'
+  workflow_dispatch:
+
+jobs:
+  fetch-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download ggml-small-q5_1 model
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 5 --retry-delay 5 \
+            'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin?download=true' \
+            -o ggml-small-q5_1.bin
+          test -s ggml-small-q5_1.bin
+          sha256sum ggml-small-q5_1.bin
+      - name: Upload model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ggml-small-q5-bin
+          path: ggml-small-q5_1.bin
+          compression-level: 0
+          retention-days: 1
