@@ -1,0 +1,28 @@
+name: Temporary Whisper Small Model Fetch
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fetch-whisper-small.yml'
+  workflow_dispatch:
+
+jobs:
+  fetch-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download ggml-small model
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 5 --retry-delay 5 \
+            'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin?download=true' \
+            -o ggml-small.bin
+          echo '1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b  ggml-small.bin' | sha256sum -c -
+      - name: Upload model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ggml-small-bin
+          path: ggml-small.bin
+          compression-level: 0
+          retention-days: 1
