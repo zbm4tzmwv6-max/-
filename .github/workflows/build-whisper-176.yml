@@ -1,0 +1,30 @@
+name: Temporary Whisper CPP 1.7.6 Build
+
+on:
+  push:
+    paths:
+      - '.github/workflows/build-whisper-176.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout whisper.cpp 1.7.6
+        run: git clone --depth 1 --branch v1.7.6 https://github.com/ggml-org/whisper.cpp.git whisper.cpp
+      - name: Build CPU CLI
+        run: |
+          cmake -S whisper.cpp -B whisper.cpp/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build whisper.cpp/build --config Release -j2
+          mkdir package
+          find whisper.cpp/build -type f \( -name 'whisper-cli' -o -name 'main' -o -name '*.so*' \) -exec cp -L {} package/ \;
+          chmod +x package/whisper-cli package/main 2>/dev/null || true
+          ls -lh package
+      - name: Upload Linux build
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisper-cpp-176-linux
+          path: package
+          compression-level: 6
+          retention-days: 1
