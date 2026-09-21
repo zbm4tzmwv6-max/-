@@ -11,16 +11,54 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Download Whisper small q5_1
+      - name: Download and verify Whisper small q5_1
         run: |
           set -euo pipefail
-          curl -L --fail --retry 5 --retry-delay 2             -o ggml-small-q5_1.bin             https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin
+          curl -L --fail --retry 5 --retry-delay 2 \
+            -o ggml-small-q5_1.bin \
+            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin
           echo "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb  ggml-small-q5_1.bin" | sha256sum -c -
-          ls -lh ggml-small-q5_1.bin
-      - name: Upload model artifact
+          split -b 40M -d -a 1 ggml-small-q5_1.bin model-part-
+          sha256sum model-part-* > parts.sha256
+          ls -lh model-part-* parts.sha256
+      - name: Upload part 0
         uses: actions/upload-artifact@v4
         with:
-          name: whisper-small-q5_1
-          path: ggml-small-q5_1.bin
+          name: whisper-small-q5-part-0
+          path: model-part-0
           compression-level: 0
+          retention-days: 1
+      - name: Upload part 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisper-small-q5-part-1
+          path: model-part-1
+          compression-level: 0
+          retention-days: 1
+      - name: Upload part 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisper-small-q5-part-2
+          path: model-part-2
+          compression-level: 0
+          retention-days: 1
+      - name: Upload part 3
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisper-small-q5-part-3
+          path: model-part-3
+          compression-level: 0
+          retention-days: 1
+      - name: Upload part 4
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisper-small-q5-part-4
+          path: model-part-4
+          compression-level: 0
+          retention-days: 1
+      - name: Upload checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisper-small-q5-checksums
+          path: parts.sha256
           retention-days: 1
