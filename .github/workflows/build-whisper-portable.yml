@@ -1,0 +1,38 @@
+name: Temporary Portable Whisper CPP Build
+
+on:
+  push:
+    paths:
+      - '.github/workflows/build-whisper-portable.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Clone whisper.cpp
+        run: |
+          git clone --depth 1 --branch v1.7.6 https://github.com/ggml-org/whisper.cpp.git
+      - name: Build portable CPU binary
+        run: |
+          cd whisper.cpp
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DGGML_NATIVE=OFF \
+            -DGGML_AVX=ON \
+            -DGGML_AVX2=ON \
+            -DGGML_FMA=ON \
+            -DGGML_AVX512=OFF \
+            -DGGML_AVX_VNNI=OFF \
+            -DGGML_AMX=OFF
+          cmake --build build --config Release -j 2 --target whisper-cli
+          mkdir -p ../portable
+          cp build/bin/whisper-cli ../portable/whisper-cli
+          ldd ../portable/whisper-cli || true
+      - name: Upload portable binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisper-cpp-176-portable-linux
+          path: portable/whisper-cli
+          retention-days: 1
