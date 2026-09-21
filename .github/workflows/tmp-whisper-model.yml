@@ -1,0 +1,26 @@
+name: Temporary Whisper Model Bridge
+
+on:
+  push:
+    branches:
+      - tmp-whisper-model-20260921
+  workflow_dispatch:
+
+jobs:
+  fetch-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download Whisper small q5_1
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 5 --retry-delay 2             -o ggml-small-q5_1.bin             https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin
+          echo "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb  ggml-small-q5_1.bin" | sha256sum -c -
+          ls -lh ggml-small-q5_1.bin
+      - name: Upload model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisper-small-q5_1
+          path: ggml-small-q5_1.bin
+          compression-level: 0
+          retention-days: 1
