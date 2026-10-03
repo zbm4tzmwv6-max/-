@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-截至 2026-09-28：
+截至 2026-10-03（新增端到端 smoke CI；首次实际运行结果以 Actions 为准）：
 
 | 日期 | 变更 | 当前状态 |
 | --- | --- | --- |
@@ -14,11 +14,12 @@
 | 2026-09-21 | 新增 `.github/workflows/build-whisper-portable.yml` | 可手动或在该 YAML 变更时运行；构建 whisper.cpp 1.7.6 的 Linux x64 `whisper-cli`，Artifact 保留 1 天 |
 | 2026-09-22 | 更新根目录 `README.md` | 当时仅保留“创作者工作流”标题 |
 | 当前 | `语音转文字/` 已包含 Skill、runtime lock、bootstrap、whisper.cpp 转写 wrapper 和 smoke test | 可以在运行时资产已经准备好的前提下执行 whisper.cpp 转写 |
+| 2026-10-03 | 新增 `.github/workflows/asr-smoke.yml` | 按 runtime lock 构建 CLI、下载 base Q5、生成短语音并执行实际转写，验证 TXT/SRT/JSON/manifest；结果与失败日志保留 14 天 |
 | 当前 | 根目录 `scripts/transcribe_audio.py` + `scripts/ensure_runtime.sh` | 另一条独立的 `faster-whisper` 转写路径，已开启 VAD |
 
-两个 GitHub Actions 目前都是 **独立的临时 bootstrap 任务**，不是端到端转写任务。它们之间没有 `needs` 依赖，也不会自动调用仓库里的转写脚本。
+原有两个 GitHub Actions 仍然都是 **独立的临时 bootstrap 任务**，不是端到端转写任务。它们之间没有 `needs` 依赖，也不会自动调用仓库里的转写脚本。
 
-另外，因为两个 workflow 的 `push.paths` 都只监听各自 YAML 文件，所以 **只修改 README、Skill 或转写脚本不会触发这两个 workflow**。
+另外，因为原有两个 workflow 的 `push.paths` 都只监听各自 YAML 文件，所以 **只修改 README、Skill 或转写脚本不会触发这两个 workflow**。
 
 ---
 
@@ -67,7 +68,9 @@
 
 ---
 
-## 当前最关键的接口错位
+## 原有 bootstrap 与统一入口仍待解决的接口错位
+
+新增 `asr-smoke.yml` 已在 CI 内按 lock 准备 CLI/base 模型并写入固定 runtime 路径；以下旧 bootstrap 的版本、压缩包与 small 模型问题仍然存在。本次没有修改它们，也没有实现通用资产桥接或 VAD。
 
 ### 1. 默认全程转写需要 base，但模型 workflow 只产 small
 
@@ -185,7 +188,8 @@ retention-days: 1
 ├── .github/
 │   └── workflows/
 │       ├── build-whisper-portable.yml      # 临时：构建 Linux x64 whisper-cli
-│       └── fetch-whisper-small-q5.yml       # 临时：下载 small Q5
+│       ├── fetch-whisper-small-q5.yml       # 临时：下载 small Q5
+│       └── asr-smoke.yml                   # 端到端短语音转写 CI
 │
 ├── 语音转文字/
 │   ├── README.md
@@ -201,7 +205,9 @@ retention-days: 1
 │   │   ├── transcribe_media.py
 │   │   └── refine_segment.py
 │   └── tests/
-│       └── smoke_test.sh
+│       ├── smoke_test.sh                   # 保留原有文件/--help 检查
+│       ├── e2e_smoke_test.sh               # 生成语音并调用现有 wrapper
+│       └── verify_smoke_outputs.py         # 检查产物内容、时间轴与 manifest
 │
 └── scripts/
     ├── ensure_runtime.sh                     # faster-whisper runtime
@@ -394,7 +400,7 @@ ggml-small-q5_1.bin
 bash 语音转文字/tests/smoke_test.sh
 ```
 
-注意：当前 smoke test 要求 **base Q5 模型**，所以只下载现有 small Q5 Artifact 并不足以通过完整 smoke test。
+`smoke_test.sh` 仍只检查文件与 `--help`，需要 **base Q5 模型**。完整短语音测试另由 `e2e_smoke_test.sh` 执行；运行方法见下面的端到端 smoke CI 章节。旧检查直接调用 bootstrap；因仓库记录的权限为 0644，CI 会先执行 `chmod +x 语音转文字/scripts/bootstrap_from_session_assets.sh`。
 
 ### 第 8 步：完整时间轴转写
 
@@ -602,7 +608,7 @@ RUNTIME_PYTHON="$(scripts/ensure_runtime.sh)"
 
 如果通过 GitHub 手机网页 / App 操作：
 
-- 可以手动触发现有两个 `workflow_dispatch`；
+- 可以手动触发两个 bootstrap，或运行 `ASR end-to-end smoke` 验证固定短语音链路；
 - 可以查看构建状态；
 - 可以在 Artifact 过期前下载产物；
 - 但 **当前两个 workflow 都不能接收你的录音并直接完成转写**。
@@ -622,6 +628,29 @@ RUNTIME_PYTHON="$(scripts/ensure_runtime.sh)"
 ---
 
 ## GitHub Actions 当前的正确定位
+
+### `asr-smoke.yml`：端到端短语音 CI
+
+运行入口：GitHub Actions → **ASR end-to-end smoke** → **Run workflow**。相关脚本、tests、runtime lock、此 workflow 或根 README 的 push / pull request 也会触发。使用 Ubuntu 24.04、只读仓库权限，单个 job 最长 25 分钟，实际转写步骤最长 5 分钟。
+
+执行顺序：
+
+1. 读取 `runtime/runtime-lock.json` 的版本、默认模型名与 `base_q5_1` URL；当前为 **whisper.cpp 1.9.2 + ggml-base-q5_1.bin**，不会降级到旧 bootstrap 的 1.7.6 或 small。
+2. 从 whisper.cpp 官方对应 tag 构建 CPU CLI，关闭 shared libs，并安装到 `语音转文字/runtime/whisper-bin-ubuntu-x64/whisper-cli`；base 模型下载到现有 runtime 根目录。记录上游 commit 和模型 SHA-256。lock 当前未提供预期模型哈希，此处记录哈希用于追溯，不声称完成可信哈希比对。下载/构建失败会直接失败，不切换模型或版本。
+3. 复用现有 bootstrap / `smoke_test.sh` 预检；用 espeak-ng 本地生成约十秒英文语音，再转成 44.1 kHz 双声道 FLAC，交给现有 `transcribe_media.py` 解码、标准化和推理。测试显式传入固定 CLI/model 路径，使用 base、英文、2 线程及 `--force`，避免其他缓存或旧 manifest 掩盖故障。
+4. 检查所有产物非空、JSON 可解析且有转写段落、SRT 时间轴递增且位于音频范围内、TXT/SRT/JSON 文本一致、带时间戳逐字稿与 SRT 一致、至少识别三个测试关键词、标准化 WAV 为 16 kHz 单声道 PCM16，以及 manifest 源 SHA-256、文件大小、引擎、语言、模型和产物路径。
+
+英文合成语音只验证工程链路，不代表中文准确率、长录音尾段覆盖、VAD、说话人识别或 small 精转已经验收。本次保持原有生产脚本、runtime lock 和两个临时 workflow 不变。
+
+**产物与失败排查**：每次运行使用新的输出子目录。`always()` 上传 `asr-smoke-<run_id>-<run_attempt>`，保留 **14 天**（受仓库保留政策约束）；其中包括生成的测试媒体、预期文本、TXT/SRT/JSON/manifest、`validation.json`、构建/下载/预检/转写日志、runtime lock 副本、上游 commit、模型哈希和环境诊断。模型与 CLI 二进制不上传、不缓存，每次从干净 runner 准备，避免依赖 1 天 Artifact。早期失败时只有已生成的日志；runner 丢失或强制终止时上传无法保证。先看首个失败步骤，再查看同名日志；修复依赖/网络或代码后重跑任务即可。
+
+在已准备相同 runtime 且安装 Python 3、FFmpeg、espeak-ng 的 Linux 环境，可直接复现转写与产物检查：
+
+```bash
+bash 语音转文字/tests/e2e_smoke_test.sh /tmp/asr-smoke-results
+```
+
+新增 workflow 的完成标准是：干净 runner 完成上述四步、`validation.json` 为 `passed`，且产物可下载。仓库提交、静态校验与实际 CI 通过是三个不同状态；首次运行状态请查看 Actions。完整业务链路仍需满足文末其余完成标准。
 
 ### `fetch-whisper-small-q5.yml`
 
@@ -669,7 +698,7 @@ RUNTIME_PYTHON="$(scripts/ensure_runtime.sh)"
 2. **补 bridge 层**：让裸 CLI / 裸 BIN / zip / session cache 都能归一化到固定 runtime 路径；
 3. **补 base 模型解析**：不能只依赖 small；
 4. **把 VAD 收进统一入口**：决定使用 faster-whisper VAD、独立 VAD，或其他固定实现；
-5. **让 smoke test 真正覆盖 runtime + model + 短音频实际转写**；
+5. **持续验证端到端 smoke CI**：新增 `asr-smoke.yml` 已实现这条检查；每次以对应提交的绿色运行及产物为通过证据；
 6. **增加单一高层入口**：脚本或统一 GitHub workflow；
 7. **跑一条真实长录音**：确认 transcript、SRT、JSON、manifest 和关键片段精转都能复用；
 8. **再删除两个 Temporary workflow**。
@@ -691,7 +720,7 @@ RUNTIME_PYTHON="$(scripts/ensure_runtime.sh)"
 - CLI 版本有唯一 lock；
 - base / small 模型来源和缓存路径明确；
 - GitHub Artifact 可以自动 bridge，而不是人工改名搬文件；
-- 干净环境可以通过 smoke test；
+- 干净环境中的 `ASR end-to-end smoke` 全部步骤成功，且 `validation.json` 为 `passed`；仅文件检查通过、workflow 已提交或 Artifact 上传成功均不算端到端通过；
 - 实际录音可以直接产出带时间戳逐字稿；
 - manifest 可以按源文件 hash 复用；
 - 关键节点可以 small 二次精转；

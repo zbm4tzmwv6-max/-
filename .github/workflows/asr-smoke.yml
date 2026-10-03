@@ -1,0 +1,123 @@
+name: ASR end-to-end smoke
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/asr-smoke.yml'
+      - '语音转文字/runtime/runtime-lock.json'
+      - '语音转文字/scripts/**'
+      - '语音转文字/tests/**'
+      - 'README.md'
+  pull_request:
+    paths:
+      - '.github/workflows/asr-smoke.yml'
+      - '语音转文字/runtime/runtime-lock.json'
+      - '语音转文字/scripts/**'
+      - '语音转文字/tests/**'
+      - 'README.md'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    env:
+      RUNTIME: ${{ github.workspace }}/语音转文字/runtime
+      EVIDENCE: ${{ github.workspace }}/smoke-artifacts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Initialize evidence and read runtime lock
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE"
+          cp "$RUNTIME/runtime-lock.json" "$EVIDENCE/"
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          lock = json.loads((Path(os.environ['RUNTIME']) / 'runtime-lock.json').read_text())
+          runtime = lock['tested_runtime']
+          version = runtime['whisper_cpp']
+          model = runtime['full_call_model']
+          url = lock['model_sources']['base_q5_1']
+          assert re.fullmatch(r'\d+\.\d+\.\d+', version), version
+          assert runtime['platform'] == 'linux-x64'
+          assert model == 'ggml-base-q5_1.bin', model
+          assert url.startswith('https://') and not any(c.isspace() for c in url), url
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write(f'WHISPER_VERSION={version}\nMODEL_NAME={model}\nMODEL_URL={url}\n')
+          print(f'whisper.cpp v{version}; model={model}; source={url}')
+          PY
+      - name: Install build and test dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update 2>&1 | tee "$EVIDENCE/apt-update.log"
+          sudo apt-get install -y --no-install-recommends build-essential cmake curl ffmpeg espeak-ng unzip \
+            2>&1 | tee "$EVIDENCE/apt-install.log"
+      - name: Build locked CPU runtime at the existing path
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/asr-smoke-whisper"
+          git clone --depth 1 --branch "v$WHISPER_VERSION" \
+            https://github.com/ggml-org/whisper.cpp.git "$src" 2>&1 | tee "$EVIDENCE/clone.log"
+          git -C "$src" rev-parse HEAD > "$EVIDENCE/whisper-source-commit.txt"
+          cmake -S "$src" -B "$src/build" -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_CUDA=OFF \
+            -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF \
+            2>&1 | tee "$EVIDENCE/configure.log"
+          cmake --build "$src/build" --config Release --parallel 2 --target whisper-cli \
+            2>&1 | tee "$EVIDENCE/build.log"
+          install -Dm755 "$src/build/bin/whisper-cli" "$RUNTIME/whisper-bin-ubuntu-x64/whisper-cli"
+      - name: Download locked base Q5 model
+        run: |
+          set -euo pipefail
+          curl --location --fail --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 \
+            "$MODEL_URL" -o "$RUNTIME/$MODEL_NAME.part" 2>&1 | tee "$EVIDENCE/download.log"
+          test -s "$RUNTIME/$MODEL_NAME.part"
+          mv "$RUNTIME/$MODEL_NAME.part" "$RUNTIME/$MODEL_NAME"
+          sha256sum "$RUNTIME/$MODEL_NAME" > "$EVIDENCE/model-sha256.txt"
+      - name: Generate speech, transcribe, and validate outputs
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          # Existing smoke_test.sh invokes bootstrap directly, but Git stores it as 0644.
+          chmod +x '语音转文字/scripts/bootstrap_from_session_assets.sh'
+          bash '语音转文字/tests/smoke_test.sh' 2>&1 | tee "$EVIDENCE/preflight.log"
+          bash '语音转文字/tests/e2e_smoke_test.sh' "$EVIDENCE" 2>&1 | tee "$EVIDENCE/transcription.log"
+      - name: Collect diagnostics and job summary
+        if: always()
+        run: |
+          mkdir -p "$EVIDENCE"
+          {
+            uname -a
+            python3 --version
+            cmake --version
+            ffmpeg -version
+            df -h .
+            find "$RUNTIME" "$EVIDENCE" -maxdepth 3 -type f -printf '%p %s bytes\n'
+            if [[ -x "$RUNTIME/whisper-bin-ubuntu-x64/whisper-cli" ]]; then
+              ldd "$RUNTIME/whisper-bin-ubuntu-x64/whisper-cli" || true
+              "$RUNTIME/whisper-bin-ubuntu-x64/whisper-cli" --help || true
+            fi
+          } > "$EVIDENCE/diagnostics.log" 2>&1
+          cat "$EVIDENCE/diagnostics.log"
+          {
+            echo '## ASR smoke evidence'
+            echo 'Inspect the step conclusions and validation.json; artifact upload alone does not mean the test passed.'
+            echo 'Logs, generated speech, TXT/SRT/JSON/manifest are retained for 14 days (subject to repository policy).'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain results and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: asr-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: smoke-artifacts/
+          if-no-files-found: error
+          retention-days: 14
