@@ -30,6 +30,9 @@ jobs:
     env:
       RUNTIME: ${{ github.workspace }}/语音转文字/runtime
       EVIDENCE: ${{ github.workspace }}/smoke-artifacts
+      # Official whisper.cpp model, pinned to a repository revision and LFS SHA-256.
+      MODEL_FALLBACK_URL: https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base-q5_1.bin
+      MODEL_SHA256: 422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898
     steps:
       - uses: actions/checkout@v4
         with:
@@ -78,9 +81,17 @@ jobs:
       - name: Download locked base Q5 model
         run: |
           set -euo pipefail
-          curl --location --fail --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 \
-            "$MODEL_URL" -o "$RUNTIME/$MODEL_NAME.part" 2>&1 | tee "$EVIDENCE/download.log"
+          printf '%s\n' "$MODEL_URL" > "$EVIDENCE/model-source.txt"
+          if ! curl --location --fail --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 \
+            "$MODEL_URL" -o "$RUNTIME/$MODEL_NAME.part" 2>&1 | tee "$EVIDENCE/download.log"; then
+            echo '::warning::Locked model source failed; using the pinned official base Q5 mirror.'
+            printf '%s\n' "$MODEL_FALLBACK_URL" > "$EVIDENCE/model-source.txt"
+            curl --location --fail --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 \
+              "$MODEL_FALLBACK_URL" -o "$RUNTIME/$MODEL_NAME.part" 2>&1 | tee -a "$EVIDENCE/download.log"
+          fi
           test -s "$RUNTIME/$MODEL_NAME.part"
+          printf '%s  %s\n' "$MODEL_SHA256" "$RUNTIME/$MODEL_NAME.part" | sha256sum --check \
+            2>&1 | tee "$EVIDENCE/model-verification.log"
           mv "$RUNTIME/$MODEL_NAME.part" "$RUNTIME/$MODEL_NAME"
           sha256sum "$RUNTIME/$MODEL_NAME" > "$EVIDENCE/model-sha256.txt"
       - name: Generate speech, transcribe, and validate outputs

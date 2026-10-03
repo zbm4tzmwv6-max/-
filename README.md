@@ -636,13 +636,13 @@ RUNTIME_PYTHON="$(scripts/ensure_runtime.sh)"
 执行顺序：
 
 1. 读取 `runtime/runtime-lock.json` 的版本、默认模型名与 `base_q5_1` URL；当前为 **whisper.cpp 1.9.2 + ggml-base-q5_1.bin**，不会降级到旧 bootstrap 的 1.7.6 或 small。
-2. 从 whisper.cpp 官方对应 tag 构建 CPU CLI，关闭 shared libs，并安装到 `语音转文字/runtime/whisper-bin-ubuntu-x64/whisper-cli`；base 模型下载到现有 runtime 根目录。记录上游 commit 和模型 SHA-256。lock 当前未提供预期模型哈希，此处记录哈希用于追溯，不声称完成可信哈希比对。下载/构建失败会直接失败，不切换模型或版本。
+2. 从 whisper.cpp 官方对应 tag 构建 CPU CLI，关闭 shared libs，并安装到 `语音转文字/runtime/whisper-bin-ubuntu-x64/whisper-cli`；base 模型下载到现有 runtime 根目录。记录上游 commit 和模型 SHA-256。首次 CI 已验证该 lock 的 base URL 返回 404；CI 保留它为首选，下载失败时明确告警并使用 whisper.cpp 官方 Hugging Face 同名模型，固定到修订 `5359861c739e955e79d9a303bcbc70fb988958b1`。两条下载路径均核对官方 LFS SHA-256 `422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898`，实际来源记录在 `model-source.txt`；双源失败或哈希不符会直接失败，不更换模型或 CLI 版本。此补充仅用于 CI，未修改 runtime lock。
 3. 复用现有 bootstrap / `smoke_test.sh` 预检；用 espeak-ng 本地生成约十秒英文语音，再转成 44.1 kHz 双声道 FLAC，交给现有 `transcribe_media.py` 解码、标准化和推理。测试显式传入固定 CLI/model 路径，使用 base、英文、2 线程及 `--force`，避免其他缓存或旧 manifest 掩盖故障。
 4. 检查所有产物非空、JSON 可解析且有转写段落、SRT 时间轴递增且位于音频范围内、TXT/SRT/JSON 文本一致、带时间戳逐字稿与 SRT 一致、至少识别三个测试关键词、标准化 WAV 为 16 kHz 单声道 PCM16，以及 manifest 源 SHA-256、文件大小、引擎、语言、模型和产物路径。
 
 英文合成语音只验证工程链路，不代表中文准确率、长录音尾段覆盖、VAD、说话人识别或 small 精转已经验收。本次保持原有生产脚本、runtime lock 和两个临时 workflow 不变。
 
-**产物与失败排查**：每次运行使用新的输出子目录。`always()` 上传 `asr-smoke-<run_id>-<run_attempt>`，保留 **14 天**（受仓库保留政策约束）；其中包括生成的测试媒体、预期文本、TXT/SRT/JSON/manifest、`validation.json`、构建/下载/预检/转写日志、runtime lock 副本、上游 commit、模型哈希和环境诊断。模型与 CLI 二进制不上传、不缓存，每次从干净 runner 准备，避免依赖 1 天 Artifact。早期失败时只有已生成的日志；runner 丢失或强制终止时上传无法保证。先看首个失败步骤，再查看同名日志；修复依赖/网络或代码后重跑任务即可。
+**产物与失败排查**：每次运行使用新的输出子目录。`always()` 上传 `asr-smoke-<run_id>-<run_attempt>`，保留 **14 天**（受仓库保留政策约束）；其中包括生成的测试媒体、预期文本、TXT/SRT/JSON/manifest、`validation.json`、构建/下载/预检/转写日志、runtime lock 副本、上游 commit、实际模型来源、模型哈希及校验日志和环境诊断。模型与 CLI 二进制不上传、不缓存，每次从干净 runner 准备，避免依赖 1 天 Artifact。早期失败时只有已生成的日志；runner 丢失或强制终止时上传无法保证。先看首个失败步骤，再查看同名日志；修复依赖/网络或代码后重跑任务即可。
 
 在已准备相同 runtime 且安装 Python 3、FFmpeg、espeak-ng 的 Linux 环境，可直接复现转写与产物检查：
 
